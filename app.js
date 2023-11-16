@@ -10,47 +10,63 @@ const config = {
   host: process.env.DB_HOST,
   port: process.env.DB_PORT,
   database: process.env.DB_NAME,
+  ssl: {
+    rejectUnauthorized: true,
+    ca: fs
+      .readFileSync(`${process.env.HOME_DIRECTORY}/.postgresql/root.crt`)
+      .toString(),
+  },
 }
 
 const client = new pg.Client(config)
 
-async function addAllCharactersToDatabase() {
+async function createAllCharactersDatabase(client) {
   try {
     await client.connect()
+  } catch (e) {
+    console.error('Failed to connect to the database:', e)
+    return
+  }
 
+  let pageNumber = 1
+  let hasMorePages = true
+
+  await client.query('BEGIN')
+  try {
     await client.query(`
-      CREATE TABLE IF NOT EXISTS "alexandr-rubin" (
-        id SERIAL PRIMARY KEY,
-        name TEXT NOT NULL,
-        data JSONB NOT NULL
-      )`)
-
-    let page = 1
-    let hasMorePages = true
+    CREATE TABLE IF NOT EXISTS "${process.env.TABLE_NAME}" (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      data JSONB NOT NULL
+    )`)
 
     while (hasMorePages) {
-      const response = await fetchData(`https://rickandmortyapi.com/api/character?page=${page}`)
+      const response = await fetchData(`https://rickandmortyapi.com/api/character?page=${pageNumber}`)
       const characters = response.results
 
-      for (const character of characters) {
-        const { name, ...data } = character
-
-        await client.query(`
-          INSERT INTO "alexandr-rubin" (name, data)
-          VALUES ($1, $2)
-        `, [name, data])
-      }
+      await addCharactersToDatabase(characters, client)
 
       hasMorePages = response.info.next !== null
-      page++;
+      pageNumber++
     }
 
+    await client.query('COMMIT')
     console.log("Characters have been successfully added to the database.")
-  } catch (error) {
-    console.error("Error adding characters to database:", error)
-  } finally {
+  }
+  catch (error) {
+    console.log("Error adding characters to the database:", error)
+    await client.query('ROLLBACK')
+  }
+  finally {
     await client.end()
   }
+}
+
+async function addCharactersToDatabase(characters, client) {
+  await Promise.all(characters.map(character => {
+    const { name, ...data } = character
+    return client.query(`INSERT INTO "${process.env.TABLE_NAME}" (name, data) VALUES ($1, $2)`, [name, data])
+  }))
 }
 
 async function fetchData(url) {
@@ -58,4 +74,4 @@ async function fetchData(url) {
   return response.json()
 }
 
-addAllCharactersToDatabase()
+createAllCharactersDatabase(client)
