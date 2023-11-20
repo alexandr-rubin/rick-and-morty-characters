@@ -4,6 +4,7 @@ const fetch = require('node-fetch');
 const pg = require("pg");
 require('dotenv').config()
 
+
 const config = {
   user: process.env.DB_USERNAME,
   password: process.env.DB_PASSWORD,
@@ -11,9 +12,9 @@ const config = {
   port: process.env.DB_PORT,
   database: process.env.DB_NAME,
   ssl: {
-    rejectUnauthorized: true,
+    rejectUnauthorized: false,
     ca: fs
-      .readFileSync(`${process.env.HOME_DIRECTORY}/.postgresql/root.crt`)
+      .readFileSync(`${process.env.HOME_DIRECTORY}.postgresql/root.crt`)
       .toString(),
   },
 }
@@ -21,12 +22,9 @@ const config = {
 const client = new pg.Client(config)
 
 async function createAllCharactersDatabase(client) {
-  try {
-    await client.connect()
-  } catch (e) {
-    console.error('Failed to connect to the database:', e)
-    return
-  }
+  client.connect((error) => {
+    if (error) throw error
+  })
 
   let pageNumber = 1
   let hasMorePages = true
@@ -73,5 +71,6 @@ async function fetchData(url) {
   const response = await fetch(url)
   return response.json()
 }
+
 
 createAllCharactersDatabase(client)
